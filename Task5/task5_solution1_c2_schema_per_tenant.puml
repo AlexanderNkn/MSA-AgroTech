@@ -1,0 +1,43 @@
+@startuml Task5_C2_SchemaPerTenant
+!include <C4/C4_Container>
+
+title Task5 Вариант 1: Мультитенантность через schema-per-tenant (C2)
+
+Person(client_admin, "Администратор клиента", "Управляет tenant-аккаунтом")
+Person(operator, "Оператор фермы", "Работает с инцидентами")
+
+System_Boundary(saas, "SaaS платформа") {
+  Container(api_gateway, "API Gateway", "Kong/Caddy", "Единая точка входа")
+  Container(auth_service, "Auth Service", "Go", "OIDC, RBAC, tenant-scoped access")
+  Container(tenant_service, "Tenant Service", "Go", "Жизненный цикл tenant-а")
+  Container(monitoring_service, "Monitoring Service", "Go", "Инциденты и мониторинг")
+  Container(analytics_service, "Analytics Service", "Go", "KPI и отчеты")
+  Container(subscription_service, "Subscription Service", "Go", "Планы и подписки")
+  Container(metering_service, "Metering Service", "Go", "Сбор usage")
+  Container(billing_service, "Billing Service", "Go", "Счета и закрывающие документы")
+  Container(payment_adapter, "Payment Adapter", "Go", "Интеграция с платежными провайдерами РФ")
+  ContainerDb(shared_pg, "Shared PostgreSQL", "PostgreSQL", "Одна БД, отдельная схема на tenant")
+  ContainerDb(analytics_db, "Analytics Warehouse", "ClickHouse", "Общая аналитика с tenant_id")
+}
+
+System_Ext(payments_rf, "Платежные провайдеры РФ", "Эквайринг, СБП, кошельки")
+
+Rel(client_admin, api_gateway, "Self-service управление", "HTTPS")
+Rel(operator, api_gateway, "Мониторинг и подтверждение", "HTTPS")
+Rel(api_gateway, auth_service, "Проверка доступа", "OIDC")
+Rel(api_gateway, tenant_service, "Tenant operations", "REST")
+Rel(api_gateway, monitoring_service, "Мониторинг API", "REST")
+Rel(api_gateway, analytics_service, "Отчеты API", "REST")
+Rel(api_gateway, subscription_service, "Подписки API", "REST")
+Rel(subscription_service, billing_service, "Тарифные правила", "gRPC")
+Rel(metering_service, billing_service, "Usage агрегаты", "gRPC")
+Rel(billing_service, payment_adapter, "Создание и подтверждение платежей", "HTTPS")
+Rel(payment_adapter, payments_rf, "Платежные API/Webhook", "HTTPS")
+Rel(tenant_service, shared_pg, "schema routing", "SQL")
+Rel(monitoring_service, shared_pg, "tenant schema access", "SQL")
+Rel(subscription_service, shared_pg, "tenant schema access", "SQL")
+Rel(metering_service, shared_pg, "tenant schema access", "SQL")
+Rel(billing_service, shared_pg, "tenant schema access", "SQL")
+Rel(analytics_service, analytics_db, "Read/Write", "SQL")
+
+@enduml

@@ -1,7 +1,7 @@
 @startuml Основное_решение_C3
 !include <C4/C4_Component>
 
-title Основное решение: Гибридная edge-cloud архитектура - Диаграмма компонентов (C3)
+title Основное решение: Гибридная архитектура «периферия-облако» - Диаграмма компонентов (C3)
 
 Person(operator, "Оператор фермы", "Следит за инцидентами и подтверждает тревоги")
 Person(farm_manager, "Менеджер фермы", "Планирует кормление, поголовье и ресурсы")
@@ -15,7 +15,7 @@ System_Ext(bi_system, "Корпоративная BI-система", "Отче�
 System_Ext(notification_system, "Система уведомлений", "SMS, push, e-mail и мессенджеры")
 System_Ext(ai_platform, "Платформа моделей компьютерного зрения", "Поставляемые партнерами модели для инференса")
 
-System_Boundary(edge_boundary, "Ферма (edge-контур)") {
+System_Boundary(edge_boundary, "Ферма (периферийный контур, edge)") {
     Component(edge_api, "Edge API Gateway", "Caddy", "Локальная точка входа и маршрутизация запросов")
     Component(camera_ingress, "Camera Ingress Service", "Go", "Прием видеопотоков и телеметрии")
     Component(frame_preprocessor, "Frame Preprocessor", "Python", "Подготовка кадров и нормализация данных")

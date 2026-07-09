@@ -1,0 +1,42 @@
+@startuml Task5_C2_InstancePerTenant
+!include <C4/C4_Container>
+
+title Task5 Вариант 3: Мультитенантность через instance-per-tenant (C2)
+
+Person(client_admin, "Администратор клиента", "Управляет tenant-аккаунтом")
+
+System_Boundary(control_plane, "Control Plane") {
+  Container(global_gateway, "Global API Gateway", "Kong", "Роутинг по tenant")
+  Container(tenant_orchestrator, "Tenant Orchestrator", "Go", "Поднятие изолированных инстансов")
+  Container(global_billing, "Global Billing", "Go", "Кросс-tenant биллинг")
+  Container(global_payment_adapter, "Global Payment Adapter", "Go", "Интеграция с провайдерами РФ")
+  ContainerDb(control_db, "Control DB", "PostgreSQL", "Метаданные tenant-ов")
+}
+
+System_Boundary(tenant_a_stack, "Tenant A Dedicated Stack") {
+  Container(a_api, "Tenant A API", "Go", "Изолированный API")
+  Container(a_monitoring, "Tenant A Monitoring", "Go", "Изолированный monitoring")
+  ContainerDb(a_db, "Tenant A DB", "PostgreSQL", "Изолированные данные")
+}
+
+System_Boundary(tenant_b_stack, "Tenant B Dedicated Stack") {
+  Container(b_api, "Tenant B API", "Go", "Изолированный API")
+  Container(b_monitoring, "Tenant B Monitoring", "Go", "Изолированный monitoring")
+  ContainerDb(b_db, "Tenant B DB", "PostgreSQL", "Изолированные данные")
+}
+
+System_Ext(payments_rf, "Платежные провайдеры РФ", "Эквайринг, СБП, кошельки")
+
+Rel(client_admin, global_gateway, "Self-service", "HTTPS")
+Rel(global_gateway, tenant_orchestrator, "Provision/Deprovision", "REST")
+Rel(tenant_orchestrator, control_db, "Tenant metadata", "SQL")
+Rel(global_gateway, a_api, "Tenant A route", "HTTPS")
+Rel(global_gateway, b_api, "Tenant B route", "HTTPS")
+Rel(a_api, a_monitoring, "Domain calls", "gRPC")
+Rel(a_monitoring, a_db, "SQL", "SQL")
+Rel(b_api, b_monitoring, "Domain calls", "gRPC")
+Rel(b_monitoring, b_db, "SQL", "SQL")
+Rel(global_billing, global_payment_adapter, "Payments", "HTTPS")
+Rel(global_payment_adapter, payments_rf, "Платежные API/Webhook", "HTTPS")
+
+@enduml

@@ -5,7 +5,7 @@ title Основное решение: Video Analytics Service - Диаграм�
 
 note as N1
   Класс-диаграмма компонента Video Analytics Service
-  из edge-контура фермы
+  из периферийного контура (edge) фермы
 end note
 
 package "domain.model" {

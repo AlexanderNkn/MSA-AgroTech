@@ -1,0 +1,50 @@
+@startuml Task5_C2_DatabasePerTenant
+!include <C4/C4_Container>
+
+title Task5 Вариант 2: Мультитенантность через database-per-tenant (C2)
+
+Person(client_admin, "Администратор клиента", "Управляет tenant-аккаунтом")
+Person(operator, "Оператор фермы", "Работает с инцидентами")
+
+System_Boundary(saas, "SaaS платформа") {
+  Container(api_gateway, "API Gateway", "Kong/Caddy", "Единая точка входа")
+  Container(auth_service, "Auth Service", "Go", "OIDC, RBAC, tenant-scoped access")
+  Container(tenant_control_plane, "Tenant Control Plane", "Go", "Provisioning tenant-ресурсов")
+  Container(monitoring_service, "Monitoring Service", "Go", "Инциденты и мониторинг")
+  Container(integration_service, "Integration Service", "Go", "Интеграции ERP/BI клиента")
+  Container(subscription_service, "Subscription Service", "Go", "Планы и подписки")
+  Container(metering_service, "Metering Service", "Go", "Сбор и агрегация usage")
+  Container(pricing_service, "Pricing Service", "Go", "Тарификация")
+  Container(billing_service, "Billing Service", "Go", "Счета и статусы оплат")
+  Container(payment_adapter, "Payment Adapter", "Go", "Интеграция с провайдерами РФ")
+  Container(tenant_db_router, "Tenant DB Router", "Go", "Маршрутизация в БД tenant-а")
+  ContainerDb(control_plane_db, "Control Plane DB", "PostgreSQL", "Метаданные tenant-ов")
+  ContainerDb(tenant_db_a, "Tenant DB (Client A)", "PostgreSQL", "Отдельная БД клиента A")
+  ContainerDb(tenant_db_b, "Tenant DB (Client B)", "PostgreSQL", "Отдельная БД клиента B")
+  ContainerDb(usage_warehouse, "Usage Warehouse", "ClickHouse", "Агрегаты метрик и биллинга")
+}
+
+System_Ext(payments_rf, "Платежные провайдеры РФ", "Эквайринг, СБП, кошельки")
+
+Rel(client_admin, api_gateway, "Self-service управление", "HTTPS")
+Rel(operator, api_gateway, "Мониторинг и подтверждение", "HTTPS")
+Rel(api_gateway, auth_service, "Проверка доступа", "OIDC")
+Rel(api_gateway, tenant_control_plane, "Tenant lifecycle", "REST")
+Rel(api_gateway, monitoring_service, "Monitoring API", "REST")
+Rel(api_gateway, integration_service, "Integration API", "REST")
+Rel(api_gateway, subscription_service, "Subscription API", "REST")
+Rel(metering_service, pricing_service, "Usage -> pricing", "gRPC")
+Rel(pricing_service, billing_service, "Calculated charges", "gRPC")
+Rel(billing_service, payment_adapter, "Payment intents", "HTTPS")
+Rel(payment_adapter, payments_rf, "Платежные API/Webhook", "HTTPS")
+Rel(tenant_control_plane, control_plane_db, "Tenant metadata", "SQL")
+Rel(monitoring_service, tenant_db_router, "Tenant data access", "gRPC")
+Rel(integration_service, tenant_db_router, "Tenant data access", "gRPC")
+Rel(subscription_service, tenant_db_router, "Tenant plan state", "gRPC")
+Rel(billing_service, tenant_db_router, "Invoices by tenant", "gRPC")
+Rel(tenant_db_router, tenant_db_a, "SQL (tenant A)", "SQL")
+Rel(tenant_db_router, tenant_db_b, "SQL (tenant B)", "SQL")
+Rel(metering_service, usage_warehouse, "Usage ingest", "SQL")
+Rel(billing_service, usage_warehouse, "Billing analytics", "SQL")
+
+@enduml
