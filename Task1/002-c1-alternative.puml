@@ -1,0 +1,33 @@
+@startuml Альтернативное_решение_C1
+!include <C4/C4_Context>
+
+title Альтернативное решение: Централизованная облачная платформа мониторинга свиноводческих ферм (C1)
+
+Person(operator, "Оператор фермы", "Следит за инцидентами и подтверждает тревоги")
+Person(farm_manager, "Менеджер фермы", "Планирует кормление, поголовье и ресурсы")
+Person(veterinarian, "Ветеринар", "Получает уведомления о здоровье животных")
+
+System(cloud_platform, "Облачная платформа мониторинга", "Централизованная система для мониторинга, аналитики и управления событиями со всех ферм")
+
+System_Ext(minimal_gateway, "Минимальный фермерский шлюз", "Собирает потоки с камер и отправляет их в облако")
+System_Ext(cameras, "Камеры и датчики на ферме", "Видео, телеметрия и события с оборудования")
+System_Ext(idp, "Единый центр аутентификации", "SSO, OAuth2/OIDC и управление ролями")
+System_Ext(notification_system, "Система уведомлений", "SMS, push, e-mail и мессенджеры")
+System_Ext(erp_system, "ERP 1C:Агро", "Поголовье, корма, закупки и справочники")
+System_Ext(bi_system, "Корпоративная BI-система", "Отчеты, KPI и аналитика")
+System_Ext(cloud_ai_services, "Облачные AI-сервисы", "Внешние сервисы инференса и обработки видео")
+System_Ext(cloud_storage, "Облачное хранилище", "Хранение видеопотоков и истории событий")
+
+Rel(cameras, minimal_gateway, "Передает видео и телеметрию")
+Rel(minimal_gateway, cloud_platform, "Потоки видео и события", "Internet")
+Rel(operator, minimal_gateway, "Мониторинг и подтверждение инцидентов", "Web/Mobile, LAN")
+Rel(farm_manager, minimal_gateway, "Отчеты и управление процессами", "Web, LAN")
+Rel(veterinarian, minimal_gateway, "Получает тревоги о здоровье животных", "Web/Mobile, LAN")
+Rel(cloud_platform, idp, "Аутентификация и авторизация", "OIDC")
+Rel(cloud_platform, notification_system, "Отправляет уведомления о событиях", "API")
+Rel(cloud_platform, erp_system, "Передает данные о поголовье, кормах и инцидентах", "API")
+Rel(cloud_platform, bi_system, "Делится метриками и KPI", "API")
+Rel(cloud_platform, cloud_ai_services, "Использует внешние AI-сервисы", "API")
+Rel(cloud_platform, cloud_storage, "Хранит видеоархив и историю событий", "API")
+
+@enduml

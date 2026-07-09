@@ -1,0 +1,31 @@
+@startuml Основное_решение_C1
+!include <C4/C4_Context>
+
+title Основное решение: Гибридная edge-cloud платформа мониторинга свиноводческих ферм (C1)
+
+Person(operator, "Оператор фермы", "Следит за инцидентами и подтверждает тревоги")
+Person(farm_manager, "Менеджер фермы", "Планирует кормление, поголовье и ресурсы")
+Person(veterinarian, "Ветеринар", "Получает уведомления о здоровье животных")
+
+System(central_platform, "Центральная платформа мониторинга", "Агрегирует события с ферм, хранит историю, управляет ролями и интеграциями")
+
+System_Ext(farm_agent, "Агент фермы", "Локальная обработка, кеширование и синхронизация при потере связи")
+System_Ext(cameras, "Камеры и датчики на ферме", "Видео, телеметрия и события с оборудования")
+System_Ext(idp, "Единый центр аутентификации", "SSO, OAuth2/OIDC и управление ролями")
+System_Ext(notification_system, "Система уведомлений", "SMS, push, e-mail и мессенджеры")
+System_Ext(erp_system, "ERP 1C:Агро", "Поголовье, корма, закупки и справочники")
+System_Ext(bi_system, "Корпоративная BI-система", "Отчеты, KPI и аналитика")
+System_Ext(ml_platform, "Платформа моделей компьютерного зрения", "Поставляемые партнерами модели для инференса")
+
+Rel(cameras, farm_agent, "Передает видео и телеметрию")
+Rel(farm_agent, central_platform, "Синхронизирует инциденты и метрики, работает при задержке до 10 минут", "gRPC/HTTPS")
+Rel(operator, farm_agent, "Мониторинг и подтверждение инцидентов", "Web/Mobile, LAN")
+Rel(farm_manager, farm_agent, "Отчеты и управление процессами", "Web, LAN")
+Rel(veterinarian, farm_agent, "Получает тревоги о здоровье животных", "Web/Mobile, LAN")
+Rel(central_platform, idp, "Выпуск и обновление токенов, управление ролями", "OIDC")
+Rel(central_platform, notification_system, "Отправляет уведомления о событиях", "API")
+Rel(central_platform, erp_system, "Передает данные о поголовье, кормах и инцидентах", "API")
+Rel(central_platform, bi_system, "Делится метриками и KPI", "API")
+Rel(central_platform, ml_platform, "Использует внешние модели анализа", "API")
+
+@enduml
