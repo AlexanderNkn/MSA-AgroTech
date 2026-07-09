@@ -1,0 +1,84 @@
+@startuml Основное_решение_C2
+!include <C4/C4_Container>
+
+title Основное решение: Гибридная архитектура периферия-облако (C2)
+
+Person(operator, "Оператор фермы", "Мониторинг инцидентов и подтверждение тревог")
+Person(farm_manager, "Менеджер фермы", "Планирование кормления и контроль KPI")
+Person(veterinarian, "Ветеринар", "Контроль здоровья животных")
+
+Container(farm_ui, "Farm Ops UI", "PWA (React)", "Локальный интерфейс оператора и ветеринара")
+Container(manager_ui, "Manager Portal", "Web", "Центральный интерфейс для менеджера")
+
+System_Ext(cameras, "Камеры и датчики", "RTSP видеопотоки и телеметрия")
+System_Ext(plc, "Контроллеры кормления/воды", "Исполнительные устройства разных вендоров")
+System_Ext(idp, "Корпоративный IdP", "SSO/OIDC, роли")
+System_Ext(erp, "ERP 1C:Агро", "Справочники, закупки, учет")
+System_Ext(bi, "Корпоративная BI", "Отчеты и аналитика")
+System_Ext(notify_gateway, "Шлюз уведомлений", "SMS/Push/e-mail/messenger")
+System_Ext(ai_model_registry, "Реестр AI-моделей", "Публикация версий моделей")
+
+System_Boundary(edge, "Ферма (периферийный агент)") {
+  Container(edge_gateway, "Edge API Gateway", "Caddy", "Локальная точка входа и прокси авторизации")
+  Container(video_infer, "Video Inference", "Python + ONNX Runtime", "Обнаружение драк, стресса, задавливания")
+  Container(incident_engine, "Incident Engine", "Go", "Корреляция событий и локальная эскалация")
+  Container(livestock_service, "Livestock Service", "Go", "Учет поголовья и статусов животных")
+  Container(feeding_control, "Feeding Control Service", "Go", "Команды кормушкам и поилкам")
+  Container(equipment_monitor, "Equipment Monitor", "Rust", "Контроль фильтрации и климата")
+  Container(edge_bus, "Edge Event Bus", "NATS JetStream", "Локальная очередь и ретраи")
+  ContainerDb(edge_db, "Edge Store", "SQLite/PostgreSQL", "Локальные данные и очередь отправки")
+  Container(sync_agent, "Sync Agent", "Go", "Синхронизация с центром по схеме накопления и передачи")
+}
+
+System_Boundary(core, "Центральная платформа") {
+  Container(core_gateway, "Core API Gateway", "Caddy", "Единая точка входа API")
+  Container(identity_adapter, "Identity Adapter", "Go", "Интеграция с IdP и проверка токенов")
+  Container(farm_twin, "Farm Twin Service", "Go", "Агрегация состояния ферм")
+  Container(alert_orchestrator, "Alert Orchestrator", "Go", "Глобальные правила уведомлений")
+  Container(integration_hub, "Integration Hub", "Go", "Интеграции с ERP/BI/уведомлениями")
+  Container(core_bus, "Event Backbone", "Apache Kafka", "Центральная событийная шина")
+  ContainerDb(core_db, "Operational DB", "PostgreSQL", "Транзакционное хранилище")
+  ContainerDb(analytics_db, "Analytics DB", "ClickHouse", "KPI и аналитические срезы")
+  ContainerDb(media_archive, "Media Archive", "S3/MinIO", "Видеоархив и доказательная база")
+}
+
+Rel(operator, farm_ui, "Работает с тревогами", "LAN/HTTPS")
+Rel(veterinarian, farm_ui, "Проверяет карточки животных", "LAN/HTTPS")
+Rel(farm_manager, manager_ui, "Смотрит KPI и отчеты", "HTTPS")
+
+Rel(farm_ui, edge_gateway, "API запросы", "HTTPS")
+Rel(manager_ui, core_gateway, "API запросы", "HTTPS")
+
+Rel(cameras, video_infer, "Видео/телеметрия", "RTSP/MQTT")
+Rel(video_infer, incident_engine, "События детекции", "gRPC")
+Rel(incident_engine, edge_bus, "Публикует инциденты", "NATS")
+Rel(livestock_service, edge_bus, "Публикует изменения поголовья", "NATS")
+Rel(equipment_monitor, edge_bus, "Публикует техсобытия", "NATS")
+Rel(feeding_control, plc, "Команды управления", "Modbus/TCP, MQTT")
+Rel(edge_gateway, livestock_service, "Доменные команды", "gRPC")
+Rel(edge_gateway, feeding_control, "Команды кормления", "gRPC")
+Rel(edge_gateway, incident_engine, "Подтверждение инцидентов", "gRPC")
+Rel(video_infer, edge_db, "Пишет результаты", "SQL")
+Rel(incident_engine, edge_db, "Пишет инциденты", "SQL")
+Rel(livestock_service, edge_db, "Пишет состояние", "SQL")
+Rel(feeding_control, edge_db, "Журнал команд", "SQL")
+Rel(equipment_monitor, edge_db, "Пишет метрики", "SQL")
+Rel(sync_agent, edge_db, "Читает outbox", "SQL")
+Rel(sync_agent, core_gateway, "Синхронизация", "gRPC/HTTPS")
+Rel(sync_agent, edge_bus, "Ретраи/буфер", "NATS")
+Rel(video_infer, ai_model_registry, "Получает версии моделей", "HTTPS")
+
+Rel(core_gateway, identity_adapter, "AuthN/AuthZ", "HTTPS")
+Rel(identity_adapter, idp, "Валидация токенов", "OIDC")
+Rel(core_gateway, farm_twin, "API роутинг", "gRPC")
+Rel(farm_twin, core_bus, "Публикует доменные события", "Kafka")
+Rel(alert_orchestrator, core_bus, "Читает события", "Kafka")
+Rel(alert_orchestrator, notify_gateway, "Отправляет уведомления", "HTTPS")
+Rel(integration_hub, core_bus, "Подписка на события", "Kafka")
+Rel(integration_hub, erp, "Синхронизация справочников/фактов", "REST")
+Rel(integration_hub, bi, "Экспорт KPI", "REST")
+Rel(farm_twin, core_db, "OLTP данные", "SQL")
+Rel(farm_twin, analytics_db, "Материализованные метрики", "ETL")
+Rel(farm_twin, media_archive, "Ссылки на видеофрагменты", "S3 API")
+
+@enduml
