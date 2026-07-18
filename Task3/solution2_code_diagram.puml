@@ -1,0 +1,249 @@
+@startuml Альтернативное_решение_C4_IncidentRuleEngine
+!include <C4/C4_Component>
+
+title Альтернативное решение: Incident Rule Engine - Диаграмма кода (C4)
+
+note as N1
+  Класс-диаграмма компонента Incident Rule Engine
+  из облачной платформы
+end note
+
+package "domain.model" {
+    class IncidentSignal {
+        +ID: string
+        +FarmID: string
+        +SourceType: SourceType
+        +OccurredAt: time.Time
+        +Severity: SeverityLevel
+        +Payload: map[string]interface{}
+        +IsCritical(): bool
+        +CanDeduplicate(): bool
+    }
+
+    class IncidentCandidate {
+        +ID: string
+        +SignalID: string
+        +IncidentType: IncidentType
+        +FarmID: string
+        +CreatedAt: time.Time
+        +Priority: int
+        +Confidence: float64
+        +ToIncident(): Incident
+        +RequiresEscalation(): bool
+    }
+
+    class Incident {
+        +ID: string
+        +FarmID: string
+        +Type: IncidentType
+        +Severity: SeverityLevel
+        +Status: IncidentStatus
+        +OpenedAt: time.Time
+        +UpdatedAt: time.Time
+        +Close(): void
+        +Escalate(): void
+    }
+
+    class EscalationPolicy {
+        +PolicyID: string
+        +IncidentType: IncidentType
+        +SeverityThreshold: SeverityLevel
+        +NotificationChannel: string
+        +Cooldown: time.Duration
+        +IsApplicable(signal: IncidentSignal): bool
+        +ShouldEscalate(incident: Incident): bool
+    }
+
+    class NotificationPlan {
+        +PlanID: string
+        +IncidentID: string
+        +Channels: []string
+        +Recipients: []string
+        +Attempts: int
+        +NextRetryAt: time.Time
+        +AddChannel(channel: string): void
+        +NeedsRetry(now: time.Time): bool
+    }
+
+    enum SourceType {
+        VIDEO
+        TELEMETRY
+        DEVICE_EVENT
+        MANUAL_CONFIRMATION
+    }
+
+    enum IncidentType {
+        AGGRESSION
+        CRUSHING_RISK
+        ANIMAL_ILLNESS
+        EQUIPMENT_FAILURE
+        FEEDING_ANOMALY
+        WATER_FILTER_FAULT
+    }
+
+    enum IncidentStatus {
+        NEW
+        ACKNOWLEDGED
+        ESCALATED
+        RESOLVED
+    }
+}
+
+package "service.cloud" {
+    interface IncidentRuleEngine {
+        +Correlate(signal: IncidentSignal): []IncidentCandidate
+        +EvaluatePolicy(candidate: IncidentCandidate): NotificationPlan
+        +Dispatch(plan: NotificationPlan): error
+        +UpdatePolicies(policies: []EscalationPolicy): error
+        +GetHealth(): ServiceHealth
+    }
+
+    class CloudIncidentRuleEngine {
+        -correlator: SignalCorrelator
+        -deduplicator: Deduplicator
+        -policyEvaluator: PolicyEvaluator
+        -alertComposer: AlertComposer
+        -dispatcher: NotificationDispatcher
+        -metricsPublisher: MetricsPublisher
+        -incidentRepository: IncidentRepository
+        -policyRepository: PolicyRepository
+        -farmStateCache: FarmStateCache
+        +Correlate(signal: IncidentSignal): []IncidentCandidate
+        +EvaluatePolicy(candidate: IncidentCandidate): NotificationPlan
+        +Dispatch(plan: NotificationPlan): error
+        +UpdatePolicies(policies: []EscalationPolicy): error
+        +GetHealth(): ServiceHealth
+        -loadFarmState(farmID: string): FarmSnapshot
+        -mergeSignals(signals: []IncidentSignal): []IncidentCandidate
+        -storeIncident(candidate: IncidentCandidate): error
+    }
+
+    class SignalCorrelator {
+        -windowSize: time.Duration
+        -farmCorrelationThreshold: float64
+        -patternCache: PatternCache
+        +Correlate(signal: IncidentSignal): []IncidentCandidate
+        +Merge(signals: []IncidentSignal): []IncidentCandidate
+        +BuildContext(farmID: string): FarmContext
+        -groupByFarm(signals: []IncidentSignal): map[string][]IncidentSignal
+        -scoreCorrelation(signals: []IncidentSignal): float64
+    }
+
+    class Deduplicator {
+        -seenSignals: map[string]time.Time
+        -ttl: time.Duration
+        +IsDuplicate(signal: IncidentSignal): bool
+        +Remember(signal: IncidentSignal): void
+        +PruneExpired(now: time.Time): int
+        -fingerprint(signal: IncidentSignal): string
+    }
+
+    class PolicyEvaluator {
+        -rules: []EscalationPolicy
+        -defaultChannels: []string
+        +EvaluatePolicy(candidate: IncidentCandidate): NotificationPlan
+        +UpdatePolicies(policies: []EscalationPolicy): error
+        +GetPolicies(): []EscalationPolicy
+        -selectChannels(candidate: IncidentCandidate): []string
+        -calculateRetryDelay(attempt: int): time.Duration
+    }
+
+    class AlertComposer {
+        -templateEngine: TemplateEngine
+        -messageCatalog: MessageCatalog
+        +Compose(candidate: IncidentCandidate): NotificationPlan
+        +ComposeStatusUpdate(incident: Incident): NotificationPlan
+        +ComposeSummary(farmID: string): NotificationPlan
+        -buildMessage(candidate: IncidentCandidate): string
+        -chooseAudience(candidate: IncidentCandidate): []string
+    }
+
+    class NotificationDispatcher {
+        -gateway: NotificationGateway
+        -retryPolicy: RetryPolicy
+        -outbox: DispatchOutbox
+        +Dispatch(plan: NotificationPlan): error
+        +RetryPending(): int
+        +Failover(plan: NotificationPlan): error
+        -send(plan: NotificationPlan): error
+        -recordAttempt(plan: NotificationPlan): void
+    }
+}
+
+package "repository.cloud" {
+    interface IncidentRepository {
+        +Save(candidate: IncidentCandidate): error
+        +GetByFarm(farmID: string, timeRange: TimeRange): []Incident
+        +GetOpenIncidents(farmID: string): []Incident
+        +CloseIncident(incidentID: string): error
+    }
+
+    interface PolicyRepository {
+        +LoadPolicies(): []EscalationPolicy
+        +SavePolicy(policy: EscalationPolicy): error
+        +DeletePolicy(policyID: string): error
+    }
+
+    class PostgreSqlIncidentRepository {
+        -db: *sql.DB
+        -tableName: string
+        +Save(candidate: IncidentCandidate): error
+        +GetByFarm(farmID: string, timeRange: TimeRange): []Incident
+        +GetOpenIncidents(farmID: string): []Incident
+        +CloseIncident(incidentID: string): error
+        -insertIncident(candidate: IncidentCandidate): error
+        -selectIncidents(farmID: string, timeRange: TimeRange): []Incident
+    }
+
+    class PostgreSqlPolicyRepository {
+        -db: *sql.DB
+        -cacheWarmUp: bool
+        +LoadPolicies(): []EscalationPolicy
+        +SavePolicy(policy: EscalationPolicy): error
+        +DeletePolicy(policyID: string): error
+        -selectActivePolicies(): []EscalationPolicy
+        -persistPolicy(policy: EscalationPolicy): error
+    }
+}
+
+package "integration.external" {
+    interface NotificationGateway {
+        +Send(plan: NotificationPlan): error
+        +CheckStatus(messageID: string): DeliveryStatus
+        +Fallback(plan: NotificationPlan): error
+    }
+
+    class MultiChannelNotificationGateway {
+        -smsClient: SmsClient
+        -pushClient: PushClient
+        -emailClient: EmailClient
+        -messengerClient: MessengerClient
+        +Send(plan: NotificationPlan): error
+        +CheckStatus(messageID: string): DeliveryStatus
+        +Fallback(plan: NotificationPlan): error
+        -sendByChannel(channel: string, plan: NotificationPlan): error
+        -selectPrimaryChannel(plan: NotificationPlan): string
+    }
+}
+
+CloudIncidentRuleEngine ..|> IncidentRuleEngine
+SignalCorrelator --> IncidentSignal : analyzes
+Deduplicator --> IncidentSignal : fingerprints
+PolicyEvaluator --> EscalationPolicy : evaluates
+PolicyEvaluator --> NotificationPlan : builds
+AlertComposer --> IncidentCandidate : composes
+AlertComposer --> Incident : summarizes
+NotificationDispatcher --> NotificationGateway : sends
+CloudIncidentRuleEngine --> SignalCorrelator : uses
+CloudIncidentRuleEngine --> Deduplicator : uses
+CloudIncidentRuleEngine --> PolicyEvaluator : uses
+CloudIncidentRuleEngine --> AlertComposer : uses
+CloudIncidentRuleEngine --> NotificationDispatcher : uses
+CloudIncidentRuleEngine --> IncidentRepository : stores
+CloudIncidentRuleEngine --> PolicyRepository : loads policies
+CloudIncidentRuleEngine --> FarmStateCache : reads state
+PostgreSqlIncidentRepository ..|> IncidentRepository
+PostgreSqlPolicyRepository ..|> PolicyRepository
+MultiChannelNotificationGateway ..|> NotificationGateway
+
+@enduml

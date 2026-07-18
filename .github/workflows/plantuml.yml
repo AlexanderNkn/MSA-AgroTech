@@ -1,0 +1,51 @@
+name: PlantUML Diagrams
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-diagrams:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: Install PlantUML
+        run: sudo apt-get install plantuml
+
+      - name: Generate Diagrams
+        run: |
+          mkdir -p diagrams/img
+          curl -LO https://github.com/plantuml/plantuml/releases/latest/download/plantuml.jar
+          for file in diagrams/*.puml; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file" .puml)
+              cat "$file" | java -jar plantuml.jar -pipe > "diagrams/img/${filename}.png"
+            fi
+          done
+
+      - name: Commit and push diagrams
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add diagrams/img/*.png
+          git commit -m "🤖 Auto-generate PlantUML diagrams [skip ci]" --allow-empty
+          git push

@@ -1,0 +1,287 @@
+@startuml Основное_решение_C4_VideoAnalyticsService
+!include <C4/C4_Component>
+
+title Основное решение: Video Analytics Service - Диаграмма кода (C4)
+
+note as N1
+  Класс-диаграмма компонента Video Analytics Service
+  из периферийного контура (edge) фермы
+end note
+
+package "domain.model" {
+    class VideoFrame {
+        +ID: string
+        +CameraID: string
+        +CapturedAt: time.Time
+        +Width: int
+        +Height: int
+        +Format: string
+        +Checksum: string
+        +GetAge(now: time.Time): time.Duration
+        +IsValid(): bool
+    }
+
+    class FrameBatch {
+        +BatchID: string
+        +Frames: []VideoFrame
+        +ReceivedAt: time.Time
+        +SourceCameraID: string
+        +AddFrame(frame: VideoFrame): void
+        +Size(): int
+        +IsReady(): bool
+    }
+
+    class DetectionResult {
+        +ID: string
+        +FrameID: string
+        +AnimalID: string
+        +EventType: BehaviorType
+        +Confidence: float64
+        +Severity: SeverityLevel
+        +CreatedAt: time.Time
+        +BoundingBoxes: []BoundingBox
+        +RequiresAlert(): bool
+        +IsCritical(): bool
+    }
+
+    class BehaviorEvent {
+        +ID: string
+        +AnimalID: string
+        +Timestamp: time.Time
+        +BehaviorType: BehaviorType
+        +Confidence: float64
+        +Duration: time.Duration
+        +Location: Point3D
+        +Metadata: map[string]interface{}
+        +ToIncident(): IncidentCandidate
+        +IsAnomalous(): bool
+    }
+
+    enum BehaviorType {
+        AGGRESSIVE
+        DISTRESSED
+        SICK
+        DEAD
+        CROWDING
+        FEEDING
+        DRINKING
+        RESTING
+    }
+
+    enum SeverityLevel {
+        LOW
+        MEDIUM
+        HIGH
+        CRITICAL
+    }
+
+    class CameraProfile {
+        +CameraID: string
+        +Vendor: string
+        +StreamUrl: string
+        +NightMode: bool
+        +FishEye: bool
+        +Rotation: int
+        +SupportsAudio: bool
+        +BuildRtspUrl(): string
+        +NeedsLensCorrection(): bool
+    }
+
+    class DetectionRule {
+        +RuleID: string
+        +BehaviorType: BehaviorType
+        +Threshold: float64
+        +Cooldown: time.Duration
+        +Active: bool
+        +Matches(result: DetectionResult): bool
+        +CanTrigger(now: time.Time): bool
+    }
+}
+
+package "service.local" {
+    interface VideoAnalyticsService {
+        +AnalyzeBatch(batch: FrameBatch): []DetectionResult
+        +AnalyzeFrame(frame: VideoFrame): []DetectionResult
+        +UpdateRules(rules: []DetectionRule): error
+        +WarmUpModel(version: string): error
+        +GetHealth(): ServiceHealth
+    }
+
+    class EdgeVideoAnalyticsService {
+        -preprocessor: FramePreprocessor
+        -tracker: ObjectTracker
+        -classifier: AnomalyClassifier
+        -publisher: IncidentPublisher
+        -ruleEngine: RuleEngine
+        -modelLoader: ModelLoader
+        -modelCache: ModelCache
+        -metricsCollector: MetricsCollector
+        +AnalyzeBatch(batch: FrameBatch): []DetectionResult
+        +AnalyzeFrame(frame: VideoFrame): []DetectionResult
+        +UpdateRules(rules: []DetectionRule): error
+        +WarmUpModel(version: string): error
+        +GetHealth(): ServiceHealth
+        -preprocess(frame: VideoFrame): NormalizedFrame
+        -trackObjects(frame: NormalizedFrame): []TrackedObject
+        -classifyObjects(objects: []TrackedObject): []DetectionResult
+        -publishIncidents(results: []DetectionResult): void
+    }
+
+    interface FramePreprocessor {
+        +Normalize(frame: VideoFrame): NormalizedFrame
+        +CorrectLens(frame: VideoFrame): NormalizedFrame
+        +ApplyLowLightEnhancement(frame: VideoFrame): NormalizedFrame
+        +ValidateStream(frame: VideoFrame): error
+    }
+
+    class OpenCvFramePreprocessor {
+        -pipeline: ImagePipeline
+        -enhancementProfile: EnhancementProfile
+        -correctionProfile: LensProfile
+        +Normalize(frame: VideoFrame): NormalizedFrame
+        +CorrectLens(frame: VideoFrame): NormalizedFrame
+        +ApplyLowLightEnhancement(frame: VideoFrame): NormalizedFrame
+        +ValidateStream(frame: VideoFrame): error
+        -resize(frame: VideoFrame): NormalizedFrame
+        -denoise(frame: VideoFrame): NormalizedFrame
+        -equalizeHistogram(frame: VideoFrame): NormalizedFrame
+    }
+
+    interface ObjectTracker {
+        +Track(frame: NormalizedFrame): []TrackedObject
+        +UpdateTracks(objects: []TrackedObject): error
+        +PruneExpiredTracks(maxAge: time.Duration): int
+    }
+
+    class AnimalTracker {
+        -tracks: map[string]TrackState
+        -associationThreshold: float64
+        -maxTrackGap: time.Duration
+        +Track(frame: NormalizedFrame): []TrackedObject
+        +UpdateTracks(objects: []TrackedObject): error
+        +PruneExpiredTracks(maxAge: time.Duration): int
+        -associateDetections(objects: []TrackedObject): []TrackMatch
+        -mergeTracks(left: TrackState, right: TrackState): TrackState
+    }
+
+    interface AnomalyClassifier {
+        +Classify(objects: []TrackedObject): []DetectionResult
+        +ReloadModel(version: string): error
+        +GetVersion(): string
+        +IsReady(): bool
+    }
+
+    class OnnxAnomalyClassifier {
+        -model: InferenceModel
+        -version: string
+        -featureExtractor: FeatureExtractor
+        -thresholds: map[BehaviorType]float64
+        +Classify(objects: []TrackedObject): []DetectionResult
+        +ReloadModel(version: string): error
+        +GetVersion(): string
+        +IsReady(): bool
+        -extractFeatures(object: TrackedObject): FeatureVector
+        -predict(features: FeatureVector): Prediction
+        -postProcess(predictions: []Prediction): []DetectionResult
+    }
+
+    interface IncidentPublisher {
+        +Publish(result: DetectionResult): error
+        +PublishBatch(results: []DetectionResult): error
+        +PublishHealth(status: ServiceHealth): error
+    }
+
+    class LocalIncidentPublisher {
+        -outbox: IncidentOutbox
+        -channel: MessageChannel
+        -retryPolicy: RetryPolicy
+        +Publish(result: DetectionResult): error
+        +PublishBatch(results: []DetectionResult): error
+        +PublishHealth(status: ServiceHealth): error
+        -serialize(result: DetectionResult): []byte
+        -enqueue(payload: []byte): error
+        -flush(): error
+    }
+}
+
+package "repository.local" {
+    interface LocalFrameRepository {
+        +StoreFrame(frame: VideoFrame): error
+        +GetRecentFrames(cameraID: string, limit: int): []VideoFrame
+        +Compact(retention: time.Duration): error
+    }
+
+    interface LocalDetectionRepository {
+        +SaveResult(result: DetectionResult): error
+        +GetResults(cameraID: string, timeRange: TimeRange): []DetectionResult
+        +SaveEvent(event: BehaviorEvent): error
+        +GetPendingIncidents(): []DetectionResult
+    }
+
+    class SQLiteFrameRepository {
+        -db: *sql.DB
+        -tableName: string
+        +StoreFrame(frame: VideoFrame): error
+        +GetRecentFrames(cameraID: string, limit: int): []VideoFrame
+        +Compact(retention: time.Duration): error
+        -buildInsertQuery(): string
+        -buildSelectQuery(): string
+    }
+
+    class SQLiteDetectionRepository {
+        -db: *sql.DB
+        -outboxTable: string
+        +SaveResult(result: DetectionResult): error
+        +GetResults(cameraID: string, timeRange: TimeRange): []DetectionResult
+        +SaveEvent(event: BehaviorEvent): error
+        +GetPendingIncidents(): []DetectionResult
+        -persistOutbox(result: DetectionResult): error
+        -loadPending(): []DetectionResult
+    }
+}
+
+package "integration.camera" {
+    interface CameraStreamAdapter {
+        +Open(profile: CameraProfile): error
+        +Read(): VideoFrame
+        +Close(): error
+        +GetStatus(): StreamStatus
+    }
+
+    class RtspCameraAdapter {
+        -codec: string
+        -connection: CameraConnection
+        -bufferSize: int
+        +Open(profile: CameraProfile): error
+        +Read(): VideoFrame
+        +Close(): error
+        +GetStatus(): StreamStatus
+        -reconnect(): error
+        -parseFrame(payload: []byte): VideoFrame
+    }
+}
+
+EdgeVideoAnalyticsService ..|> VideoAnalyticsService
+OpenCvFramePreprocessor ..|> FramePreprocessor
+AnimalTracker ..|> ObjectTracker
+OnnxAnomalyClassifier ..|> AnomalyClassifier
+LocalIncidentPublisher ..|> IncidentPublisher
+SQLiteFrameRepository ..|> LocalFrameRepository
+SQLiteDetectionRepository ..|> LocalDetectionRepository
+RtspCameraAdapter ..|> CameraStreamAdapter
+
+EdgeVideoAnalyticsService --> FramePreprocessor : uses
+EdgeVideoAnalyticsService --> ObjectTracker : uses
+EdgeVideoAnalyticsService --> AnomalyClassifier : uses
+EdgeVideoAnalyticsService --> IncidentPublisher : uses
+EdgeVideoAnalyticsService --> LocalFrameRepository : stores frames
+EdgeVideoAnalyticsService --> LocalDetectionRepository : stores detections
+EdgeVideoAnalyticsService --> CameraStreamAdapter : reads stream
+EdgeVideoAnalyticsService --> DetectionRule : evaluates
+EdgeVideoAnalyticsService --> CameraProfile : validates stream
+LocalIncidentPublisher --> LocalDetectionRepository : writes outbox
+OnnxAnomalyClassifier --> LocalDetectionRepository : loads model metadata
+AnimalTracker --> LocalFrameRepository : uses history
+RtspCameraAdapter --> CameraProfile : adapts source
+
+@enduml

@@ -1,0 +1,29 @@
+@startuml Task5_ToBe_C1
+!include <C4/C4_Context>
+
+title Task5 To-Be: SaaS платформа мониторинга свиноводческих ферм (C1)
+
+Person(client_admin, "Администратор клиента", "Управляет подпиской, доступами и интеграциями")
+Person(farm_operator, "Оператор фермы", "Получает тревоги и ведет мониторинг")
+Person(veterinarian, "Ветеринар", "Контроль состояния животных")
+Person(integrator, "Инженер интеграции клиента", "Подключает API и webhooks")
+
+System(saas_platform, "SaaS платформа мониторинга", "Мультитенантная платформа для мониторинга, аналитики, биллинга и интеграций")
+
+System_Ext(edge_agent, "Периферийный агент фермы клиента (edge)", "Локальная обработка и синхронизация")
+System_Ext(client_erp, "ERP клиента", "Поголовье, корма, закупки")
+System_Ext(client_bi, "BI клиента", "Отчеты и аналитика")
+System_Ext(payment_providers_rf, "Платежные провайдеры РФ", "Эквайринг, СБП, online-платежи")
+System_Ext(identity_provider, "Корпоративный IdP клиента", "SSO/OIDC")
+
+Rel(client_admin, saas_platform, "Управляет tenant-аккаунтом и тарифом", "Web")
+Rel(farm_operator, saas_platform, "Мониторинг и подтверждение инцидентов", "Web/Mobile")
+Rel(veterinarian, saas_platform, "Получает уведомления о здоровье животных", "Web/Mobile")
+Rel(integrator, saas_platform, "Использует API и webhook", "HTTPS")
+Rel(edge_agent, saas_platform, "Синхронизирует события и метрики", "gRPC/HTTPS")
+Rel(saas_platform, client_erp, "Интеграция справочников и событий", "API")
+Rel(saas_platform, client_bi, "Экспорт KPI и метрик", "API")
+Rel(saas_platform, payment_providers_rf, "Прием платежей и статусов", "HTTPS/Webhook")
+Rel(saas_platform, identity_provider, "Федерация аутентификации", "OIDC")
+
+@enduml

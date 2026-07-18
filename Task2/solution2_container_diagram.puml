@@ -1,0 +1,88 @@
+@startuml Альтернативное_решение_C2
+!include <C4/C4_Container>
+
+title Альтернативное решение: Централизованная облачная архитектура (C2)
+
+Person(operator, "Оператор фермы", "Мониторит тревоги и подтверждает инциденты")
+Person(farm_manager, "Менеджер фермы", "Планирует ресурсы и анализирует KPI")
+Person(veterinarian, "Ветеринар", "Отслеживает состояние животных")
+
+Container(mobile_app, "Field Mobile App", "Flutter", "Мобильный доступ для оператора и ветеринара")
+Container(web_console, "Management Console", "SPA", "Веб-консоль менеджера")
+
+System_Ext(cameras, "Камеры и датчики", "Видео и телеметрия")
+System_Ext(feed_devices, "Устройства кормления/поения", "Исполнительные контроллеры")
+System_Ext(idp, "Корпоративный IdP", "SSO/OIDC")
+System_Ext(erp, "ERP 1C:Агро", "Учет и справочники")
+System_Ext(bi, "Корпоративная BI", "Корпоративная отчетность")
+System_Ext(external_notify, "Внешние каналы уведомлений", "SMS/Push/e-mail")
+
+System_Boundary(edge_gateway_boundary, "Ферма (тонкий периферийный шлюз)") {
+  Container(device_bridge, "Device Bridge", "Go", "Сбор телеметрии, проксирование в облако")
+  Container(edge_buffer, "Edge Ring Buffer", "Redis", "Короткий буфер на случай обрыва связи")
+  Container(local_alarm, "Local Emergency Notifier", "Python", "Локальный сигнал дежурному при отсутствии связи")
+}
+
+System_Boundary(cloud, "Облачная платформа") {
+  Container(api_gateway, "API Gateway", "Kong/Managed API Gateway", "Вход, rate-limit, маршрутизация")
+  Container(auth_service, "Access Service", "Go", "Роли, проверка политик и сессии")
+  Container(stream_ingest, "Stream Ingest", "Go", "Прием телеметрии и видео-событий")
+  Container(video_analytics, "Cloud Video Analytics", "Python + GPU", "Централизованный видеоинференс")
+  Container(rule_engine, "Incident Rule Engine", "Go", "Правила эскалации и дедупликация")
+  Container(livestock_service, "Livestock Service", "Go", "Учет животных")
+  Container(feeding_service, "Feeding Service", "Go", "Управление кормлением")
+  Container(equipment_service, "Equipment Service", "Go", "Мониторинг инженерных систем")
+  Container(notification_hub, "Notification Hub", "Go", "Оркестрация уведомлений")
+  Container(integration_hub, "Integration Hub", "Go", "Интеграция с внешними системами")
+  Container(stream_bus, "Cloud Event Bus", "Managed Kafka/PubSub", "Событийная шина")
+  ContainerDb(oltp_db, "OLTP DB", "Managed PostgreSQL", "Операционные данные")
+  ContainerDb(cache, "Hot Cache", "Redis Cluster", "Быстрый доступ к активным сессиям")
+  ContainerDb(data_lake, "Data Lake", "Object Storage", "Сырое видео и события")
+  ContainerDb(warehouse, "Warehouse", "Cloud DW", "Аналитические витрины")
+}
+
+Rel(operator, mobile_app, "Мониторинг", "HTTPS")
+Rel(veterinarian, mobile_app, "Проверка тревог", "HTTPS")
+Rel(farm_manager, web_console, "Управление и отчеты", "HTTPS")
+
+Rel(mobile_app, api_gateway, "API запросы", "HTTPS")
+Rel(web_console, api_gateway, "API запросы", "HTTPS")
+Rel(api_gateway, auth_service, "Проверка прав", "HTTPS")
+Rel(auth_service, idp, "Федерация идентификации", "OIDC")
+
+Rel(cameras, device_bridge, "Видео и телеметрия", "RTSP/MQTT")
+Rel(feed_devices, device_bridge, "Статусы устройств", "MQTT")
+Rel(device_bridge, edge_buffer, "Буферизация", "Redis protocol")
+Rel(device_bridge, stream_ingest, "Передача событий и фреймов", "HTTPS/gRPC")
+Rel(edge_buffer, stream_ingest, "Реплей после восстановления", "HTTPS")
+Rel(device_bridge, local_alarm, "Критические локальные сигналы", "Local IPC")
+
+Rel(stream_ingest, stream_bus, "Публикует события", "Kafka protocol")
+Rel(video_analytics, stream_bus, "Читает/пишет события", "Kafka protocol")
+Rel(rule_engine, stream_bus, "Корреляция инцидентов", "Kafka protocol")
+Rel(livestock_service, stream_bus, "Доменные события", "Kafka protocol")
+Rel(feeding_service, stream_bus, "Команды и факты", "Kafka protocol")
+Rel(equipment_service, stream_bus, "Телеметрия оборудования", "Kafka protocol")
+
+Rel(api_gateway, livestock_service, "Команды API", "gRPC")
+Rel(api_gateway, feeding_service, "Команды API", "gRPC")
+Rel(api_gateway, equipment_service, "Команды API", "gRPC")
+Rel(video_analytics, rule_engine, "Детекции", "gRPC")
+Rel(rule_engine, notification_hub, "Сформированные тревоги", "gRPC")
+Rel(notification_hub, external_notify, "Доставка уведомлений", "HTTPS/SMTP")
+Rel(integration_hub, erp, "Синхронизация данных", "REST")
+Rel(integration_hub, bi, "Экспорт KPI", "REST")
+Rel(integration_hub, stream_bus, "Подписка на события", "Kafka protocol")
+
+Rel(livestock_service, oltp_db, "Чтение/запись", "SQL")
+Rel(feeding_service, oltp_db, "Чтение/запись", "SQL")
+Rel(equipment_service, oltp_db, "Чтение/запись", "SQL")
+Rel(auth_service, cache, "Кэш сессий", "Redis")
+Rel(video_analytics, data_lake, "Сохранение фрагментов видео", "S3 API")
+Rel(stream_bus, warehouse, "Поток в аналитику", "ETL/ELT")
+Rel(data_lake, warehouse, "Обогащение витрин", "Batch ETL")
+
+Rel(feeding_service, device_bridge, "Команды на ферму", "MQTT/HTTPS")
+Rel(equipment_service, device_bridge, "Команды диагностики", "MQTT/HTTPS")
+
+@enduml

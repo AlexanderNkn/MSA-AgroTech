@@ -1,0 +1,83 @@
+@startuml Основное_решение_C3
+!include <C4/C4_Component>
+
+title Основное решение: Гибридная архитектура «периферия-облако» - Диаграмма компонентов (C3)
+
+Person(operator, "Оператор фермы", "Следит за инцидентами и подтверждает тревоги")
+Person(farm_manager, "Менеджер фермы", "Планирует кормление, поголовье и ресурсы")
+Person(veterinarian, "Ветеринар", "Контролирует здоровье животных")
+
+System_Ext(cameras, "Камеры и датчики", "Видео, телеметрия и сигналы с оборудования")
+System_Ext(plc, "Контроллеры кормления и поения", "Исполнительные устройства разных производителей")
+System_Ext(idp, "Единый центр аутентификации", "SSO, OAuth2/OIDC и управление ролями")
+System_Ext(erp_system, "ERP 1C:Агро", "Поголовье, корма, закупки и справочники")
+System_Ext(bi_system, "Корпоративная BI-система", "Отчеты, KPI и аналитика")
+System_Ext(notification_system, "Система уведомлений", "SMS, push, e-mail и мессенджеры")
+System_Ext(ai_platform, "Платформа моделей компьютерного зрения", "Поставляемые партнерами модели для инференса")
+
+System_Boundary(edge_boundary, "Ферма (периферийный контур, edge)") {
+    Component(edge_api, "Edge API Gateway", "Caddy", "Локальная точка входа и маршрутизация запросов")
+    Component(camera_ingress, "Camera Ingress Service", "Go", "Прием видеопотоков и телеметрии")
+    Component(frame_preprocessor, "Frame Preprocessor", "Python", "Подготовка кадров и нормализация данных")
+    Component(video_analytics, "Video Analytics Service", "Python + ONNX Runtime", "Поиск драк, стресса и задавливания поросят")
+    Component(behavior_analyzer, "Behavior Analyzer", "Go", "Преобразование детекций в доменные события")
+    Component(livestock_counter, "Livestock Counter", "Go", "Пересчет поголовья и сверка с историей")
+    Component(feeding_control, "Feeding Control Service", "Go", "Управление кормушками и поилками")
+    Component(equipment_monitor, "Equipment Monitor", "Rust", "Мониторинг фильтрации и климатического оборудования")
+    Component(local_event_store, "Local Event Store", "SQLite/PostgreSQL", "Локальные данные и очередь отправки")
+    Component(sync_agent, "Sync Agent", "Go", "Синхронизация с центром по схеме накопления и передачи")
+    Component(alert_dispatcher, "Alert Dispatcher", "Go", "Локальные и централизованные оповещения")
+}
+
+System_Boundary(core_boundary, "Центральная платформа") {
+    Component(core_api, "Core API Gateway", "Caddy", "Единая точка входа для веба и мобильных приложений")
+    Component(access_service, "Access Service", "Go", "Проверка токенов и прав доступа")
+    Component(incident_orchestrator, "Incident Orchestrator", "Go", "Корреляция инцидентов и правила эскалации")
+    Component(data_aggregation, "Data Aggregation Service", "Go", "Сбор событий, метрик и состояний со всех ферм")
+    Component(integration_hub, "Integration Hub", "Go", "Интеграции с ERP, BI и внешними сервисами")
+    Component(notification_service, "Notification Service", "Go", "Маршрутизация уведомлений по каналам доставки")
+    Component(event_backbone, "Event Backbone", "Apache Kafka", "Центральная событийная шина")
+    ComponentDb(operational_db, "Operational DB", "PostgreSQL", "Операционные данные и настройки")
+    ComponentDb(analytics_db, "Analytics DB", "ClickHouse", "Аналитические срезы и KPI")
+    ComponentDb(media_archive, "Media Archive", "S3/MinIO", "Видеоархив и доказательная база")
+}
+
+Rel(operator, edge_api, "Работает с тревогами", "LAN/HTTPS")
+Rel(veterinarian, edge_api, "Проверяет состояние животных", "LAN/HTTPS")
+Rel(farm_manager, core_api, "Смотрит отчеты и KPI", "HTTPS")
+
+Rel(cameras, camera_ingress, "Видео и телеметрия", "RTSP/MQTT")
+Rel(camera_ingress, frame_preprocessor, "Подготовленные кадры", "gRPC")
+Rel(frame_preprocessor, video_analytics, "Нормализованные кадры", "gRPC")
+Rel(video_analytics, ai_platform, "Загрузка и обновление моделей", "HTTPS")
+Rel(video_analytics, behavior_analyzer, "Результаты детекции", "gRPC")
+Rel(behavior_analyzer, livestock_counter, "Сигналы об изменении поведения", "gRPC")
+Rel(livestock_counter, local_event_store, "Запись состояния поголовья", "SQL")
+Rel(video_analytics, local_event_store, "Сохранение результатов анализа", "SQL")
+Rel(behavior_analyzer, local_event_store, "Сохранение доменных событий", "SQL")
+Rel(feeding_control, plc, "Команды управления", "MQTT/Modbus")
+Rel(equipment_monitor, local_event_store, "Запись метрик оборудования", "SQL")
+Rel(alert_dispatcher, notification_system, "Отправка тревог", "API")
+Rel(sync_agent, local_event_store, "Читает очередь отправки", "SQL")
+Rel(sync_agent, core_api, "Синхронизация данных", "gRPC/HTTPS")
+Rel(edge_api, alert_dispatcher, "Подтверждение и эскалация тревог", "gRPC")
+Rel(edge_api, feeding_control, "Команды для оборудования", "gRPC")
+Rel(edge_api, equipment_monitor, "Запросы состояния", "gRPC")
+Rel(edge_api, livestock_counter, "Запросы пересчета", "gRPC")
+
+Rel(core_api, access_service, "Аутентификация и авторизация", "OIDC")
+Rel(access_service, idp, "Проверка токенов", "OIDC")
+Rel(core_api, data_aggregation, "Маршрутизация запросов", "gRPC")
+Rel(data_aggregation, event_backbone, "Публикация событий", "Kafka")
+Rel(incident_orchestrator, event_backbone, "Чтение инцидентов", "Kafka")
+Rel(notification_service, notification_system, "Доставка уведомлений", "API")
+Rel(integration_hub, erp_system, "Передача данных о поголовье и кормах", "REST")
+Rel(integration_hub, bi_system, "Экспорт метрик и KPI", "REST")
+Rel(data_aggregation, operational_db, "Операционные записи", "SQL")
+Rel(data_aggregation, analytics_db, "Аналитические данные", "ETL")
+Rel(data_aggregation, media_archive, "Ссылки на видеофрагменты", "S3 API")
+Rel(incident_orchestrator, notification_service, "Запрос на оповещение", "gRPC")
+Rel(incident_orchestrator, data_aggregation, "Запрос контекста событий", "gRPC")
+Rel(notification_service, event_backbone, "Публикация статусов доставки", "Kafka")
+
+@enduml

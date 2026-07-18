@@ -1,0 +1,73 @@
+@startuml Task5_ToBe_C2
+!include <C4/C4_Container>
+
+title Task5 To-Be: SaaS платформа (C2, выбранный вариант database-per-tenant)
+
+Person(client_admin, "Администратор клиента")
+Person(operator, "Оператор фермы")
+Person(integrator, "Инженер интеграции")
+
+System_Boundary(saas, "SaaS Platform") {
+  Container(api_gateway, "API Gateway", "Kong/Caddy", "Вход, rate-limit, tenant routing")
+  Container(auth_service, "Auth Service", "Go", "OIDC federation, RBAC/ABAC")
+  Container(tenant_control_plane, "Tenant Control Plane", "Go", "Provisioning tenant-ов")
+  Container(farm_twin_service, "Farm Twin Service", "Go", "Состояние ферм и инциденты")
+  Container(alert_service, "Alert Service", "Go", "Правила тревог и эскалация")
+  Container(integration_hub, "Integration Hub", "Go", "ERP/BI/webhook интеграции")
+  Container(dev_portal, "Developer Portal", "Backstage/Portal", "Документация API, ключи, sandbox")
+  Container(subscription_service, "Subscription Service", "Go", "Планы, лимиты, trial")
+  Container(metering_service, "Metering Service", "Go", "Сбор usage")
+  Container(pricing_service, "Pricing Service", "Go", "Тарификация")
+  Container(billing_service, "Billing Service", "Go", "Invoices и статусы")
+  Container(payment_adapter, "Payment Adapter", "Go", "Интеграция с провайдерами РФ")
+  Container(event_bus, "Event Bus", "Kafka", "Асинхронные события")
+  Container(tenant_db_router, "Tenant DB Router", "Go", "Маршрутизация в tenant БД")
+  ContainerDb(control_plane_db, "Control Plane DB", "PostgreSQL", "Tenant metadata")
+  ContainerDb(tenant_db_pool, "Tenant Databases", "PostgreSQL", "Отдельная БД на tenant")
+  ContainerDb(usage_warehouse, "Usage Warehouse", "ClickHouse", "Usage/billing аналитика")
+  ContainerDb(media_archive, "Media Archive", "S3/MinIO", "Видеофрагменты")
+}
+
+System_Ext(edge_agents, "Edge Agents клиентов", "Локальный контур ферм")
+System_Ext(client_erp, "ERP системы клиентов")
+System_Ext(client_bi, "BI системы клиентов")
+System_Ext(payment_rf, "Платежные провайдеры РФ")
+System_Ext(client_idp, "IdP клиентов")
+
+Rel(client_admin, api_gateway, "Self-service", "HTTPS")
+Rel(operator, api_gateway, "Monitoring UI/API", "HTTPS")
+Rel(integrator, dev_portal, "Onboarding и документация", "HTTPS")
+Rel(integrator, api_gateway, "Client API", "HTTPS")
+
+Rel(api_gateway, auth_service, "AuthN/AuthZ", "OIDC")
+Rel(auth_service, client_idp, "Federation", "OIDC")
+Rel(api_gateway, tenant_control_plane, "Tenant operations", "REST")
+Rel(api_gateway, farm_twin_service, "Monitoring API", "REST/gRPC")
+Rel(api_gateway, subscription_service, "Plan API", "REST")
+Rel(api_gateway, billing_service, "Billing API", "REST")
+Rel(api_gateway, integration_hub, "Integration API", "REST")
+
+Rel(edge_agents, farm_twin_service, "Events/metrics sync", "gRPC/HTTPS")
+Rel(farm_twin_service, alert_service, "Incident context", "gRPC")
+Rel(alert_service, event_bus, "Alert events", "Kafka")
+Rel(farm_twin_service, event_bus, "Domain events", "Kafka")
+Rel(integration_hub, event_bus, "Subscribe/Publish", "Kafka")
+Rel(integration_hub, client_erp, "Business integration", "REST")
+Rel(integration_hub, client_bi, "Metrics export", "REST")
+
+Rel(subscription_service, metering_service, "Plan limits", "gRPC")
+Rel(metering_service, pricing_service, "Usage aggregates", "gRPC")
+Rel(pricing_service, billing_service, "Calculated charges", "gRPC")
+Rel(billing_service, payment_adapter, "Payment intents", "HTTPS")
+Rel(payment_adapter, payment_rf, "Payments/Webhooks", "HTTPS")
+Rel(metering_service, usage_warehouse, "Usage ingest", "SQL")
+Rel(billing_service, usage_warehouse, "Billing analytics", "SQL")
+
+Rel(tenant_control_plane, control_plane_db, "Tenant metadata", "SQL")
+Rel(farm_twin_service, tenant_db_router, "Tenant data access", "gRPC")
+Rel(subscription_service, tenant_db_router, "Tenant plan state", "gRPC")
+Rel(billing_service, tenant_db_router, "Tenant invoices", "gRPC")
+Rel(tenant_db_router, tenant_db_pool, "Tenant SQL routing", "SQL")
+Rel(farm_twin_service, media_archive, "Video references", "S3 API")
+
+@enduml

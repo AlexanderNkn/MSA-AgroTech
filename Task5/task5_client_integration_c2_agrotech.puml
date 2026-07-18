@@ -1,0 +1,52 @@
+@startuml Task5_AgroTech_Client_Integration_C2
+!include <C4/C4_Container>
+
+title Task5 Пример C2: Интеграция «АгроТех Х» как клиента SaaS и его ферм
+
+Person(agro_admin, "Администратор АгроТех Х")
+Person(agro_operator, "Оператор АгроТех Х")
+Person(agro_integrator, "Интегратор АгроТех Х")
+
+System_Boundary(agrotech_side, "АгроТех Х (клиент SaaS)") {
+  Container(agro_idp, "AgroTech IdP", "Keycloak/ADFS", "SSO для сотрудников")
+  Container(agro_erp, "ERP 1C:Агро", "1C", "Поголовье, корма, закупки")
+  Container(agro_bi, "BI АгроТех Х", "BI", "Отчеты и KPI")
+  System_Boundary(farms, "Фермы АгроТех Х") {
+    Container(edge_agent_1, "Farm Edge Agent #1", "Go + Python", "Локальная аналитика и синхронизация")
+    Container(edge_agent_2, "Farm Edge Agent #2", "Go + Python", "Локальная аналитика и синхронизация")
+    Container(local_notify, "Локальный аварийный уведомитель", "Python", "Оповещение при offline")
+  }
+}
+
+System_Boundary(saas_side, "SaaS платформа") {
+  Container(api_gateway, "API Gateway", "Kong/Caddy")
+  Container(auth_service, "Auth Service", "Go")
+  Container(farm_twin_service, "Farm Twin Service", "Go")
+  Container(integration_hub, "Integration Hub", "Go")
+  Container(subscription_service, "Subscription Service", "Go")
+  Container(billing_service, "Billing Service", "Go")
+  Container(payment_adapter, "Payment Adapter", "Go")
+  ContainerDb(tenant_db_agro, "Tenant DB (AgroTech)", "PostgreSQL")
+}
+
+System_Ext(payment_rf, "Платежные провайдеры РФ")
+
+Rel(agro_admin, api_gateway, "Управляет tenant-аккаунтом", "HTTPS")
+Rel(agro_operator, api_gateway, "Мониторинг инцидентов", "HTTPS")
+Rel(agro_integrator, api_gateway, "Client API", "HTTPS")
+
+Rel(auth_service, agro_idp, "OIDC federation", "OIDC")
+Rel(api_gateway, auth_service, "AuthN/AuthZ", "OIDC")
+Rel(edge_agent_1, farm_twin_service, "События и метрики", "gRPC/HTTPS")
+Rel(edge_agent_2, farm_twin_service, "События и метрики", "gRPC/HTTPS")
+Rel(local_notify, agro_operator, "Локальные тревоги при offline", "SMS/Voice")
+
+Rel(farm_twin_service, tenant_db_agro, "Tenant data", "SQL")
+Rel(subscription_service, tenant_db_agro, "План и лимиты", "SQL")
+Rel(billing_service, tenant_db_agro, "Счета и статусы", "SQL")
+Rel(billing_service, payment_adapter, "Создание платежей", "HTTPS")
+Rel(payment_adapter, payment_rf, "Платежные API/Webhook", "HTTPS")
+Rel(integration_hub, agro_erp, "Интеграция бизнес-данных", "REST")
+Rel(integration_hub, agro_bi, "Экспорт KPI", "REST")
+
+@enduml
